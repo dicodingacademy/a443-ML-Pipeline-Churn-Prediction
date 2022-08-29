@@ -5,7 +5,7 @@ __pycache__/
 
 /serving_model
 
-/customer-churn-pipeline'
+/customer-churn-pipeline
 notebook.ipynb
 
 # C extensions
