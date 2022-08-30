@@ -1,13 +1,24 @@
 import os
 
+import tensorflow as tf
 import tensorflow_model_analysis as tfma
-import tfx
-from tfx.dsl.components.common.resolver import Resolver
+from tfx.proto import example_gen_pb2, trainer_pb2, pusher_pb2 
+from tfx.dsl.components.common.resolver import Resolver 
+from tfx.types import Channel
+from tfx.types.standard_artifacts import Model, ModelBlessing
 from tfx.dsl.input_resolution.strategies.latest_blessed_model_strategy import (
-    LatestBlessedModelStrategy
+    LatestBlessedModelStrategy)
+from tfx.components import (
+    CsvExampleGen, 
+    StatisticsGen, 
+    SchemaGen, 
+    ExampleValidator, 
+    Transform, 
+    Trainer, 
+    Tuner,
+    Evaluator,
+    Pusher
 )
-from tfx.types import Channel 
-from tfx.proto import example_gen_pb2, pusher_pb2, trainer_pb2
 
 
 def init_components(
@@ -39,32 +50,32 @@ def init_components(
         ])
     )
 
-    example_gen = tfx.components.CsvExampleGen(
+    example_gen = CsvExampleGen(
         input_base=os.path.join(os.getcwd(), data_dir), 
         output_config=output
     )
     
-    statistics_gen = tfx.components.StatisticsGen(
+    statistics_gen = StatisticsGen(
         examples=example_gen.outputs["examples"]
     )
     
-    schema_gen = tfx.components.SchemaGen(
+    schema_gen = SchemaGen(
         statistics=statistics_gen.outputs["statistics"],
         infer_feature_shape=False,
     )
     
-    example_validator = tfx.components.ExampleValidator(
+    example_validator = ExampleValidator(
         statistics=statistics_gen.outputs["statistics"],
         schema=schema_gen.outputs["schema"],
     )
 
-    transform = tfx.components.Transform(
+    transform = Transform(
         examples=example_gen.outputs["examples"],
         schema=schema_gen.outputs["schema"],
         module_file=transform_module,
     )
     
-    trainer = tfx.components.Trainer(
+    trainer = Trainer(
         module_file= training_module,
         examples= transform.outputs["transformed_examples"],
         schema= schema_gen.outputs["schema"],
@@ -74,18 +85,15 @@ def init_components(
     )
     
     model_resolver = Resolver(
-        strategy_class=LatestBlessedModelStrategy,
-        model=Channel(type=tfx.types.standard_artifacts.Model),
-        model_blessing=Channel(
-            type=tfx.types.standard_artifacts.ModelBlessing
-        )
-    )
+        strategy_class= LatestBlessedModelStrategy,
+        model = Channel(type=Model),
+        model_blessing = Channel(type=ModelBlessing)
+    ).with_id('Latest_blessed_model_resolver')
     
     slicing_specs=[
         tfma.SlicingSpec(), 
         tfma.SlicingSpec(feature_keys=[
-            "gender",
-            "Partner"
+            "gender"
         ])
     ]
 
@@ -113,14 +121,14 @@ def init_components(
         metrics_specs=metrics_specs
     )
     
-    evaluator = tfx.components.Evaluator(
+    evaluator = Evaluator(
         examples=example_gen.outputs['examples'],
         model=trainer.outputs['model'],
         baseline_model=model_resolver.outputs['model'],
         eval_config=eval_config
     )
     
-    pusher = tfx.components.Pusher(
+    pusher = Pusher(
         model=trainer.outputs["model"],
         model_blessing=evaluator.outputs["blessing"],
         push_destination=pusher_pb2.PushDestination(
